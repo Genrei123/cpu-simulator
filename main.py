@@ -1,18 +1,53 @@
 #!/usr/bin/env python3
+"""
+CPU SIMULATION PROGRAM - DOCUMENTATION
+
+OVERVIEW:
+This program simulates a simplified CPU executing algorithms while tracking register values, 
+cache behavior, and memory usage. It visualizes these components to help students understand 
+basic computer architecture concepts.
+
+COMPONENTS:
+1. CPU Simulation:
+   - Registers (R1, R2, R3, ACC): Store intermediate values during execution
+   - Cache: Simulates fast memory with limited capacity (8 entries)
+   - Memory: Divided into stack (for local variables) and heap (for dynamic allocations)
+
+2. Visualization:
+   - Register values over time
+   - Cache hit/miss performance
+   - Memory usage (stack vs heap)
+
+EXECUTION FLOW:
+1. Loads an algorithm from a Python file
+2. Simulates execution while tracking CPU state
+3. Generates interactive visualizations with explanations
+4. Displays results with educational annotations
+
+REALISM AND LIMITATIONS:
+- This is a simplified educational model, not a cycle-accurate CPU emulation
+- Register behavior is abstracted (no real instruction set)
+- Cache uses simple LRU-like replacement
+- Memory model separates stack/heap but doesn't simulate addresses precisely
+- Timing is abstract (no real clock cycles)
+- Visualization shows conceptual behavior rather than precise hardware details
+
+USAGE:
+python main.py [algorithm_file.py] [arguments]
+Example: python main.py factorial.py 5
+"""
+
 import sys
 import os
 import importlib.util
 import time
 import random
 import matplotlib.pyplot as plt
-import numpy as np
-import requests
-import json
+from matplotlib.gridspec import GridSpec
 from typing import List, Dict, Any, Tuple
 
-# CPU Simulation classes
 class Register:
-    """Simulates a CPU register"""
+    """Simulates a CPU register with history tracking"""
     def __init__(self, name: str):
         self.name = name
         self.value = 0
@@ -28,7 +63,7 @@ class Register:
         return self.value
 
 class Cache:
-    """Simulates a simple CPU cache"""
+    """Simulates a simple CPU cache with hit/miss tracking"""
     def __init__(self, size: int = 8):
         self.size = size
         self.entries = {}  # key: memory address, value: data
@@ -51,7 +86,7 @@ class Cache:
             self.miss_count += 1
             self.misses.append(self.hit_count + self.miss_count)
             if write_value is not None:
-                # If cache is full, remove oldest entry
+                # If cache is full, remove random entry (simplified LRU)
                 if len(self.entries) >= self.size:
                     oldest = next(iter(self.entries))
                     del self.entries[oldest]
@@ -85,7 +120,7 @@ class Memory:
         return self.heap.get(address)
 
 class CPU:
-    """Simulates a CPU executing an algorithm"""
+    """Main CPU simulator class"""
     def __init__(self):
         # Initialize CPU components
         self.registers = {
@@ -100,10 +135,10 @@ class CPU:
         self.step_count = 0
     
     def execute_algorithm(self, algorithm_module, *args) -> Any:
-        """Execute the provided algorithm and simulate CPU operations"""
+        """Execute the provided algorithm with CPU instrumentation"""
         algorithm_name = next((name for name in dir(algorithm_module) 
-                              if callable(getattr(algorithm_module, name)) 
-                              and not name.startswith('_')), None)
+                             if callable(getattr(algorithm_module, name)) 
+                             and not name.startswith('_')), None)
         
         if not algorithm_name:
             raise ValueError("No algorithm function found in the provided module")
@@ -123,7 +158,6 @@ class CPU:
     
     def _execute_with_instrumentation(self, func, *args) -> Any:
         """Execute the algorithm with CPU instrumentation"""
-        # Create a dictionary to track local variables
         arg_names = func.__code__.co_varnames[:func.__code__.co_argcount]
         
         # Store function arguments in registers and stack
@@ -133,47 +167,35 @@ class CPU:
             self.memory.stack_allocate(arg_name, arg_value)
             self._record_step(f"Initialize {reg_name} with argument {arg_name}={arg_value}")
         
-        # For factorial example: simulate multiplication steps
+        # Special handling for factorial to demonstrate register usage
         if func.__name__ == "factorial":
             n = args[0]
             result = 1
             self.registers["ACC"].set(result)
             
-            # Simulate factorial calculation
             for i in range(1, n + 1):
-                # Access variable from cache/memory
                 self._record_step(f"Calculate factorial step: {i}")
-                
-                # Load value into registers
                 self.registers["R1"].set(i)
                 self._record_step(f"Load {i} into R1")
                 
-                # Get current result from accumulator
                 current_result = self.registers["ACC"].get()
                 self._record_step(f"Access current result {current_result} from ACC")
                 
-                # Simulate cache operations
                 cache_address = f"temp_{i}"
                 self.cache.access(cache_address, i)
                 
-                # Perform multiplication
                 new_result = current_result * i
                 self._record_step(f"Multiply ACC({current_result}) * R1({i}) = {new_result}")
                 
-                # Store result back to accumulator
                 self.registers["ACC"].set(new_result)
                 self._record_step(f"Store result {new_result} in ACC")
                 
-                # Simulate memory allocation for intermediate result
                 self.memory.heap_allocate(f"result_{i}", new_result)
-                
-                # Add some simulated delay
                 time.sleep(0.1)
             
-            # Get final result
             result = self.registers["ACC"].get()
         else:
-            # For other algorithms, just run the function and track the result
+            # Generic execution for other algorithms
             result = func(*args)
             self.registers["ACC"].set(result)
             self._record_step(f"Store final result {result} in ACC")
@@ -194,51 +216,61 @@ class CPU:
         })
 
 class CPUVisualizer:
-    """Handles visualization of CPU simulation results"""
+    """Handles visualization of CPU simulation results with embedded explanations"""
     def __init__(self, cpu: CPU):
         self.cpu = cpu
-        self.images = []
+        self.fig = plt.figure(figsize=(15, 12))
+        self.fig.suptitle("CPU Simulation Visualizations", fontsize=16, y=1.02)
+        self.gs = GridSpec(3, 1, figure=self.fig)
     
-    def generate_visualizations(self) -> List[str]:
-        """Generate and save all visualizations, return file paths"""
+    def generate_visualizations(self) -> None:
+        """Generate and display all visualizations with explanations"""
         self._create_register_plot()
         self._create_cache_plot()
         self._create_memory_plot()
-        return self.images
+        
+        # Adjust layout and display
+        plt.tight_layout()
+        plt.show()
     
     def _create_register_plot(self) -> None:
-        """Create and save register values plot"""
-        plt.figure(figsize=(10, 6))
+        """Create register values plot with educational annotations"""
+        ax = self.fig.add_subplot(self.gs[0])
         steps = list(range(1, len(self.cpu.execution_steps) + 1))
         
+        # Plot register values
         for reg_name, register in self.cpu.registers.items():
-            # Ensure history is the right length
             if len(register.history) < len(steps):
                 register.history.extend([register.history[-1]] * (len(steps) - len(register.history)))
-            plt.plot(steps, register.history[:len(steps)], marker='o', label=reg_name)
+            ax.plot(steps, register.history[:len(steps)], marker='o', label=reg_name)
         
-        plt.title("Register Values During Execution")
-        plt.xlabel("Execution Step")
-        plt.ylabel("Register Value")
-        plt.legend()
-        plt.grid(True)
+        # Add educational annotations
+        ax.set_title("Register Values During Execution", pad=20)
+        ax.set_xlabel("Execution Step")
+        ax.set_ylabel("Register Value")
+        ax.legend()
+        ax.grid(True)
         
-        # Save the plot
-        filename = "register_values.png"
-        plt.savefig(filename)
-        plt.close()
-        self.images.append(filename)
+        # Add explanatory text
+        explanation = (
+            "Registers are the CPU's fastest storage locations. In this simulation:\n"
+            "- R1-R3: General purpose registers for intermediate values\n"
+            "- ACC: Accumulator stores the main computation result\n"
+            "Note how values change during algorithm execution."
+        )
+        ax.text(0.02, -0.25, explanation, transform=ax.transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', alpha=0.1))
     
     def _create_cache_plot(self) -> None:
-        """Create and save cache performance plot"""
-        plt.figure(figsize=(10, 6))
+        """Create cache performance plot with educational annotations"""
+        ax = self.fig.add_subplot(self.gs[1])
         
         # Extract cache data
         steps = list(range(1, len(self.cpu.execution_steps) + 1))
         hits = [step["cache_hits"] for step in self.cpu.execution_steps]
         misses = [step["cache_misses"] for step in self.cpu.execution_steps]
         
-        # Calculate hit rate for each step
+        # Calculate hit rate
         hit_rates = []
         for i, (hit, miss) in enumerate(zip(hits, misses)):
             if hit + miss == 0:
@@ -247,27 +279,32 @@ class CPUVisualizer:
                 hit_rates.append(hit / (hit + miss) * 100)
         
         # Plot hit rate
-        plt.plot(steps, hit_rates, marker='o', color='green', label='Cache Hit Rate (%)')
+        ax.plot(steps, hit_rates, marker='o', color='green', label='Cache Hit Rate (%)')
         
         # Add cumulative hits and misses
-        plt.bar([1], [hits[-1]], width=0.4, alpha=0.6, color='blue', label=f'Cache Hits ({hits[-1]})')
-        plt.bar([2], [misses[-1]], width=0.4, alpha=0.6, color='red', label=f'Cache Misses ({misses[-1]})')
+        ax.bar([1], [hits[-1]], width=0.4, alpha=0.6, color='blue', label=f'Cache Hits ({hits[-1]})')
+        ax.bar([2], [misses[-1]], width=0.4, alpha=0.6, color='red', label=f'Cache Misses ({misses[-1]})')
         
-        plt.title("Cache Performance")
-        plt.xlabel("Execution")
-        plt.ylabel("Hit Rate (%)")
-        plt.legend()
-        plt.grid(True)
+        # Add educational annotations
+        ax.set_title("Cache Performance", pad=20)
+        ax.set_xlabel("Execution")
+        ax.set_ylabel("Hit Rate (%)")
+        ax.legend()
+        ax.grid(True)
         
-        # Save the plot
-        filename = "cache_performance.png"
-        plt.savefig(filename)
-        plt.close()
-        self.images.append(filename)
+        # Add explanatory text
+        explanation = (
+            "Cache is fast memory that stores recently used data:\n"
+            "- Hits (blue): Data found in cache (fast access)\n"
+            "- Misses (red): Data not in cache (slower memory access required)\n"
+            "Good algorithms maximize cache hits for better performance."
+        )
+        ax.text(0.02, -0.25, explanation, transform=ax.transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', alpha=0.1))
     
     def _create_memory_plot(self) -> None:
-        """Create and save memory usage plot"""
-        plt.figure(figsize=(10, 6))
+        """Create memory usage plot with educational annotations"""
+        ax = self.fig.add_subplot(self.gs[2])
         
         # Extract memory data
         steps = list(range(1, len(self.cpu.execution_steps) + 1))
@@ -275,71 +312,58 @@ class CPUVisualizer:
         heap_usage = [step["heap_size"] for step in self.cpu.execution_steps]
         
         # Create stacked area chart
-        plt.fill_between(steps, 0, stack_usage, alpha=0.5, color='blue', label='Stack Usage')
-        plt.fill_between(steps, stack_usage, [s + h for s, h in zip(stack_usage, heap_usage)], 
-                         alpha=0.5, color='green', label='Heap Usage')
+        ax.fill_between(steps, 0, stack_usage, alpha=0.5, color='blue', label='Stack Usage')
+        ax.fill_between(steps, stack_usage, [s + h for s, h in zip(stack_usage, heap_usage)], 
+                       alpha=0.5, color='green', label='Heap Usage')
         
-        plt.title("Memory Usage During Execution")
-        plt.xlabel("Execution Step")
-        plt.ylabel("Number of Allocations")
-        plt.legend()
-        plt.grid(True)
+        # Add educational annotations
+        ax.set_title("Memory Usage During Execution", pad=20)
+        ax.set_xlabel("Execution Step")
+        ax.set_ylabel("Number of Allocations")
+        ax.legend()
+        ax.grid(True)
         
-        # Save the plot
-        filename = "memory_usage.png"
-        plt.savefig(filename)
-        plt.close()
-        self.images.append(filename)
+        # Add explanatory text
+        explanation = (
+            "Memory is divided into regions:\n"
+            "- Stack (blue): Stores local variables and function calls\n"
+            "- Heap (green): Stores dynamically allocated data\n"
+            "Note how different algorithms use memory differently."
+        )
+        ax.text(0.02, -0.25, explanation, transform=ax.transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', alpha=0.1))
 
 class AIAssistant:
-    """Integrates with AI API to describe visualizations"""
+    """Provides educational descriptions of simulation results"""
     def __init__(self):
         self.api_key = None  # TODO: Insert your ChatGPT 4o API key here
-        self.api_url = "https://api.openai.com/v1/chat/completions"
     
-    def describe_visualization(self, image_path: str) -> str:
-        """Send visualization to AI API and get description"""
-        if not self.api_key:
-            return "API key not provided. Please add your ChatGPT 4o API key to use this feature."
-        
-        # This is a placeholder for the actual API call
-        # In a real implementation, you would:
-        # 1. Convert the image to base64
-        # 2. Create a proper prompt
-        # 3. Send a request to the API with the image
-        
-        try:
-            # Simulated API call (replace with actual implementation)
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            # This is a simplified example - in reality, you'd encode the image
-            # and include it properly according to the OpenAI API specs
-            payload = {
-                "model": "gpt-4o",
-                "messages": [
-                    {"role": "system", "content": "You are an expert in computer architecture."},
-                    {"role": "user", "content": f"Describe what's happening in this CPU simulation visualization: {image_path}"}
-                ]
-            }
-            
-            # For demonstration, we'll return a placeholder response
-            # In a real implementation, you would uncomment the following:
-            # response = requests.post(self.api_url, headers=headers, json=payload)
-            # return response.json()["choices"][0]["message"]["content"]
-            
-            # Placeholder responses based on image type
-            if "register" in image_path:
-                return "This visualization shows how register values change during algorithm execution. The increasing values in the Accumulator (ACC) register indicate the factorial calculation is building up the result with each iteration, while other registers store intermediate values and inputs."
-            elif "cache" in image_path:
-                return "The cache performance visualization shows the hit rate improving as the algorithm progresses. Initially, we see cache misses as data is loaded for the first time, but subsequent accesses benefit from the cache, improving execution efficiency."
-            elif "memory" in image_path:
-                return "This memory usage chart shows how the algorithm allocates memory in both stack and heap regions. The stack stores local variables and function parameters, while the heap shows dynamic allocations for intermediate results. The gradual increase in heap usage indicates the algorithm is storing more data as it progresses."
-            
-        except Exception as e:
-            return f"Error getting AI description: {str(e)}"
+    def describe_visualization(self, plot_type: str) -> str:
+        """Provide educational description for each plot type"""
+        descriptions = {
+            'registers': (
+                "REGISTER ANALYSIS:\n"
+                "The register plot shows how values change in the CPU's fastest storage locations. "
+                "The accumulator (ACC) typically holds the main computation result, while R1-R3 "
+                "store intermediate values. In recursive algorithms, you'll see more register "
+                "activity as values are constantly updated."
+            ),
+            'cache': (
+                "CACHE ANALYSIS:\n"
+                "This plot shows memory access efficiency. Cache hits (blue) occur when the CPU "
+                "finds data in its fast cache memory. Misses (red) require slower main memory access. "
+                "Algorithms with good locality of reference (accessing nearby memory locations) "
+                "will show higher hit rates."
+            ),
+            'memory': (
+                "MEMORY ANALYSIS:\n"
+                "Memory usage is divided between stack (blue) and heap (green). The stack grows "
+                "with each function call and stores local variables. The heap stores dynamically "
+                "allocated data. Recursive algorithms typically show more stack usage, while "
+                "algorithms that build data structures show more heap usage."
+            )
+        }
+        return descriptions.get(plot_type, "No description available for this plot type.")
 
 def load_algorithm(file_path: str):
     """Load algorithm module from file path"""
@@ -348,7 +372,6 @@ def load_algorithm(file_path: str):
         sys.exit(1)
     
     try:
-        # Import the module
         spec = importlib.util.spec_from_file_location("algorithm", file_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -359,7 +382,6 @@ def load_algorithm(file_path: str):
 
 def main():
     """Main function to run the CPU simulation"""
-    # Check command line arguments
     if len(sys.argv) < 2:
         print("Usage: python main.py [algorithm_file] [algorithm_args]")
         print("Example: python main.py factorial.py 5")
@@ -368,47 +390,35 @@ def main():
     algorithm_file = sys.argv[1]
     algorithm_args = []
     
-    # Parse additional arguments if provided
+    # Parse additional arguments
     for arg in sys.argv[2:]:
         try:
-            # Convert to int if possible
             algorithm_args.append(int(arg))
         except ValueError:
-            # Otherwise keep as string
             algorithm_args.append(arg)
     
     # Load the algorithm
     algorithm_module = load_algorithm(algorithm_file)
     
-    # Initialize CPU
+    # Initialize CPU and execute algorithm
     cpu = CPU()
     
-    # Execute the algorithm with simulation
     try:
         print(f"\nExecuting algorithm from {algorithm_file} with args {algorithm_args}...")
         result = cpu.execute_algorithm(algorithm_module, *algorithm_args)
         print(f"Algorithm execution completed. Result: {result}\n")
         
-        # Generate visualizations
-        print("Generating CPU simulation visualizations...")
+        # Generate and display visualizations
+        print("Displaying CPU simulation visualizations...")
         visualizer = CPUVisualizer(cpu)
-        image_paths = visualizer.generate_visualizations()
+        visualizer.generate_visualizations()
         
-        # Get AI descriptions
+        # Provide AI descriptions
         ai_assistant = AIAssistant()
-        
-        # Display results
-        print("\n=== CPU SIMULATION RESULTS ===\n")
-        
-        for image_path in image_paths:
-            print(f"\n📊 {image_path.replace('.png', '').replace('_', ' ').title()}")
-            print("-" * 50)
-            
-            # Get AI description
-            ai_description = ai_assistant.describe_visualization(image_path)
-            print(f"\n🤖 AI Analysis:")
-            print(ai_description)
-            print("\n")
+        print("\n=== EDUCATIONAL ANALYSIS ===")
+        print(ai_assistant.describe_visualization('registers'))
+        print(ai_assistant.describe_visualization('cache'))
+        print(ai_assistant.describe_visualization('memory'))
     
     except Exception as e:
         print(f"Error during simulation: {str(e)}")
